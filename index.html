@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🐰 일간 소비액 분석기</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    @font-face {
+      font-family: 'RixYeoljeongdo_Regular';
+      src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2102-01@1.0/RixYeoljeongdo_Regular.woff') format('woff');
+      font-weight: normal;
+      font-style: normal;
+    }
+
+    body {
+      font-family: 'RixYeoljeongdo_Regular', sans-serif;
+      margin: 0;
+      padding: 30px;
+      background-color: #F0F0D7;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      color: #727D73;
+      font-size: 2.5rem;
+    }
+
+    form {
+      background-color: #D0DDD0;
+      padding: 20px;
+      border-radius: 20px;
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+      max-width: 400px;
+      margin: auto;
+      border: 2px dashed #AAB99A;
+    }
+
+    label, select, input, button {
+      display: block;
+      margin: 10px auto;
+      width: 90%;
+      font-size: 1.1rem;
+    }
+
+    button {
+      background-color: #727D73;
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background-color: #5e665e;
+      transform: scale(1.05);
+    }
+
+    #filter {
+      width: 200px;
+      margin: 20px auto;
+      display: block;
+      padding: 8px;
+      font-size: 1rem;
+      background-color: #F0F0D7;
+      border: 1px solid #AAB99A;
+      border-radius: 10px;
+    }
+
+    hr {
+      margin: 40px 0;
+      border: none;
+      border-top: 2px dotted #AAB99A;
+    }
+
+    h2 {
+      text-align: center;
+      color: #727D73;
+    }
+
+    #statsResult {
+      background-color: #ffffff;
+      padding: 20px;
+      border-radius: 20px;
+      box-shadow: 0 4px 12px rgba(170, 185, 154, 0.2);
+      max-width: 400px;
+      margin: 20px auto;
+      list-style: none;
+      border: 1px solid #AAB99A;
+    }
+
+    #statsResult li {
+      margin: 6px 0;
+      color: #5c675c;
+    }
+
+    .chart-container {
+      max-width: 700px;
+      margin: 50px auto;
+      background-color: #D0DDD0;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.08);
+      border: 2px dashed #AAB99A;
+    }
+
+    .chart-container h3 {
+      text-align: center;
+      margin-bottom: 10px;
+      color: #727D73;
+    }
+
+    canvas {
+      background-color: white;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🐰 일간 소비액 분석기</h1>
+
+  <form id="spendForm">
+    <label>날짜: <input type="date" id="date" required></label>
+    <label>소비 금액(₩): <input type="number" id="amount" required></label>
+    <button type="submit">기록</button>
+  </form>
+
+  <label for="filter">🔎 필터: 
+    <select id="filter">
+      <option value="all">전체</option>
+      <option value="week">최근 7일</option>
+      <option value="month">최근 30일</option>
+    </select>
+  </label>
+
+  <hr>
+
+  <h2>📊 분석 결과</h2>
+  <ul id="statsResult"></ul>
+
+  <div class="chart-container">
+    <h3>📌 소비 금액 분포 (히스토그램)</h3>
+    <canvas id="histogram"></canvas>
+  </div>
+
+  <div class="chart-container">
+    <h3>📈 날짜별 소비 흐름</h3>
+    <canvas id="lineChart"></canvas>
+  </div>
+
+  <div class="chart-container">
+    <h3>📦 Boxplot</h3>
+    <canvas id="boxChart" height="150"></canvas>
+  </div>
+
+  <script>
+    let spendData = [];
+
+    document.getElementById('spendForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const date = document.getElementById('date').value;
+      const amount = parseInt(document.getElementById('amount').value);
+      if (!date || isNaN(amount)) {
+        alert('날짜와 소비 금액을 모두 입력해주세요!');
+        return;
+      }
+      spendData.push({ date, amount });
+      updateCharts();
+    });
+
+    document.getElementById('filter').addEventListener('change', updateCharts);
+
+    function getFilteredData() {
+      const now = new Date();
+      const filter = document.getElementById('filter').value;
+      if (filter === 'all') return spendData;
+      const days = filter === 'week' ? 7 : 30;
+      return spendData.filter(entry => {
+        const d = new Date(entry.date);
+        const diff = (now - d) / (1000 * 60 * 60 * 24);
+        return diff <= days;
+      });
+    }
+
+    function analyzeStats(data) {
+      const values = data.map(d => d.amount);
+      const n = values.length;
+      if (n === 0) {
+        document.getElementById('statsResult').innerHTML = '<li>데이터가 없습니다.</li>';
+        return null;
+      }
+      const mean = values.reduce((a, b) => a + b, 0) / n;
+      const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
+      const stdDev = Math.sqrt(variance);
+      const sorted = [...values].sort((a, b) => a - b);
+      const median = sorted[Math.floor(n / 2)];
+      const Q1 = sorted[Math.floor(n / 4)];
+      const Q3 = sorted[Math.floor(n * 3 / 4)];
+      document.getElementById('statsResult').innerHTML = `
+        <li>📌 평균: ${mean.toFixed(1)}원</li>
+        <li>📌 분산: ${variance.toFixed(1)}</li>
+        <li>📌 표준편차: ${stdDev.toFixed(1)}</li>
+        <li>📌 중앙값: ${median}원</li>
+        <li>📌 Q1: ${Q1}원 | Q3: ${Q3}원</li>
+      `;
+      return { min: sorted[0], Q1, median, Q3, max: sorted[n - 1] };
+    }
+
+    function drawHistogram(data) {
+      const ctx = document.getElementById('histogram').getContext('2d');
+      const bins = [0, 5000, 10000, 15000, 20000, 25000, 30000];
+      const labels = bins.slice(0, -1).map((v, i) => `${v}~${bins[i + 1] - 1}`);
+      const freq = new Array(labels.length).fill(0);
+      for (let d of data) {
+        for (let i = 0; i < bins.length - 1; i++) {
+          if (d.amount >= bins[i] && d.amount < bins[i + 1]) {
+            freq[i]++;
+            break;
+          }
+        }
+      }
+      if (window.histogramChart) window.histogramChart.destroy();
+      window.histogramChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: '소비 금액 분포',
+            data: freq,
+            backgroundColor: '#AAB99A'
+          }]
+        },
+        options: {
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    function drawLineChart(data) {
+      const ctx = document.getElementById('lineChart').getContext('2d');
+      const sorted = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const labels = sorted.map(d => d.date);
+      const values = sorted.map(d => d.amount);
+      if (window.lineChartInstance) window.lineChartInstance.destroy();
+      window.lineChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: '소비 흐름선',
+            data: values,
+            borderColor: '#727D73',
+            backgroundColor: '#D0DDD0',
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function drawBoxChart(stats) {
+      const ctx = document.getElementById('boxChart').getContext('2d');
+      if (!stats) return;
+      const { min, Q1, median, Q3, max } = stats;
+      if (window.boxChartInstance) window.boxChartInstance.destroy();
+      window.boxChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Boxplot'],
+          datasets: [
+            {
+              label: 'Q1~Q3',
+              data: [Q3 - Q1],
+              backgroundColor: '#D0DDD0',
+              base: Q1
+            },
+            {
+              label: '중앙값',
+              data: [0.5],
+              backgroundColor: '#727D73',
+              base: median - 0.25
+            }
+          ]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: () => `최소:${min}, Q1:${Q1}, 중앙값:${median}, Q3:${Q3}, 최대:${max}`
+              }
+            }
+          },
+          scales: {
+            x: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function updateCharts() {
+      const filtered = getFilteredData();
+      const stats = analyzeStats(filtered);
+      drawHistogram(filtered);
+      drawLineChart(filtered);
+      drawBoxChart(stats);
+    }
+  </script>
+</body>
+</html>
